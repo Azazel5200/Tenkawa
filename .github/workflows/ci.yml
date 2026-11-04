@@ -1,0 +1,76 @@
+# Compile Tenkawa's game-free bootstrap on the target Windows architectures.
+# This intentionally omits the PSP game, renderer, audio and generated corpus.
+name: Native bootstrap
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tenkawa-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bootstrap:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64 (GCC)
+            os: ubuntu-24.04
+            generator: Ninja
+          - name: Windows x64 (MSVC)
+            os: windows-2022
+            generator: Visual Studio 17 2022
+            platform: x64
+          - name: Windows ARM64 (MSVC)
+            os: windows-11-arm
+            generator: Visual Studio 18 2026
+            platform: ARM64
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure (Linux)
+        if: runner.os == 'Linux'
+        run: >
+          cmake -S . -B out -G "${{ matrix.generator }}"
+          -DCMAKE_BUILD_TYPE=Release
+          -DPORTABLEKIT_RENDERER=OFF
+          -DPORTABLEKIT_FFMPEG=OFF
+          -DPSPRECOMP_BUILD_TESTS=OFF
+          -DPSPRECOMP_CCACHE=OFF
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: >
+          cmake -S . -B out -G "${{ matrix.generator }}" -A "${{ matrix.platform }}"
+          -DPORTABLEKIT_RENDERER=OFF
+          -DPORTABLEKIT_FFMPEG=OFF
+          -DPSPRECOMP_BUILD_TESTS=OFF
+          -DPSPRECOMP_CCACHE=OFF
+
+      - name: Build TenkawaNative
+        run: cmake --build out --target TenkawaNative --config Release --parallel 2
+
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: ./out/bin/TenkawaNative --help
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        run: .\out\bin\Release\TenkawaNative.exe --help
