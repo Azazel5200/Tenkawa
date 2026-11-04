@@ -1,4 +1,4 @@
 [submodule "portablekit"]
 	path = portablekit
-	url = https://github.com/TeamGDB/PortableKit.git
-	branch = main
+	url = https://github.com/Azazel5200/PortableKit.git
+	branch = dev/windows-arm64-bringup
