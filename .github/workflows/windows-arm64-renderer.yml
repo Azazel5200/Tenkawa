@@ -1,0 +1,53 @@
+# Build Tenkawa's Vulkan backend on real Windows ARM64 hardware without game
+# data. This checks compilation only; it does not prove the game renders.
+name: Windows ARM64 Vulkan build
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/windows-arm64-renderer.yml
+      - .gitmodules
+      - portablekit
+      - CMakeLists.txt
+      - host/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tenkawa-vulkan-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  renderer:
+    runs-on: windows-11-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install native ARM64 graphics dependencies
+        shell: pwsh
+        run: |
+          $vcpkg = Join-Path $env:VCPKG_INSTALLATION_ROOT 'vcpkg.exe'
+          & $vcpkg install 'sdl3[vulkan]:arm64-windows' 'vulkan-loader:arm64-windows' 'glslang[tools]:arm64-windows'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Configure Vulkan renderer
+        shell: pwsh
+        run: |
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          $shaderCompiler = Get-ChildItem (Join-Path $vcpkgRoot 'installed\arm64-windows\tools') -Filter glslangValidator.exe -Recurse -File | Select-Object -First 1
+          if (-not $shaderCompiler) { throw 'vcpkg did not install glslangValidator.exe' }
+          $toolchain = Join-Path $vcpkgRoot 'scripts\buildsystems\vcpkg.cmake'
+          $configureOutput = & cmake -S . -B out-vulkan -G 'Visual Studio 18 2026' -A ARM64 "-DCMAKE_TOOLCHAIN_FILE=$toolchain" "-DPORTABLEKIT_GLSLANG=$($shaderCompiler.FullName)" -DPORTABLEKIT_RENDERER=ON -DPORTABLEKIT_FFMPEG=OFF -DPSPRECOMP_BUILD_TESTS=OFF -DPSPRECOMP_CCACHE=OFF 2>&1
+          $configureOutput | Out-Host
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($configureOutput -match 'TenkawaNative: Vulkan renderer enabled')) {
+            throw 'CMake configured a headless build instead of the Vulkan renderer'
+          }
+
+      - name: Compile renderer and shaders
+        run: cmake --build out-vulkan --target TenkawaNative --config Release --parallel 2
