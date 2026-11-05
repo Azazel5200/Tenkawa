@@ -2,7 +2,8 @@
 
 What this port does not have yet, most blocking first. Everything here was measured, not guessed: the import lists come from the game's own import table, the recompiler's gaps from the code it generated, and the boot failures from running the game.
 
-Platform for everything below: macOS on Apple Silicon, Vulkan through MoltenVK.
+Platform for the original results below: macOS on Apple Silicon, Vulkan through
+MoltenVK. The independently measured Windows ARM64 result is noted separately.
 
 ## Where the port is
 
@@ -11,6 +12,31 @@ Platform for everything below: macOS on Apple Silicon, Vulkan through MoltenVK.
 **It reaches its title screen.** Captured from the corpus-free build, in order: the clock-frequency notice with its "next page" triangle, "Checking Memory Stick. Please do not turn off power." after the confirm button, a white screen while it loads, and then the title — the logo, the four characters, the dragon balls, the two copyright lines and a blinking "Press START button". Everything on it is drawn correctly: gradients, outlined text, the alpha on the blinking prompt. No captures are kept in this repository, because they are made from the game's own art.
 
 **Only the corpus-free build draws.** The recompiled build executes **one display list in a whole run** where the interpreter executes one per frame, so it presents nothing and its window is black. That is [PortableKit#20](https://github.com/TeamGDB/PortableKit/issues/20) and it is the thing to fix before anything else here can be judged by looking at it. An earlier note in this file said the game draws with the corpus linked; that was the frame loop running, not the drawing.
+
+### Windows ARM64 interpreter observation (2026-11-05)
+
+The game-free Vulkan build from the Windows ARM64 development branch was used
+with a separately owned `ULES-01456` disc. On Windows 11 ARM64 with a Qualcomm
+Adreno X1-45, the interpreter rendered the original PSP clock notice and the
+memory-stick screens correctly. After the two confirmations, the window became
+black before the title screen. No recompiled corpus was present, so this is
+**not the same observation** as the AOT display-list issue above.
+
+The first captured run has 335 one-second performance samples. For about 75
+seconds the host presented ~60 frames and ~60 GE display lists per second,
+with between 74 and 175 draw operations per frame. Thereafter, for 260 seconds,
+the game still reported almost 100% speed and ~60 lists per second, but only
+**one draw operation per frame**. The transition happened between consecutive
+samples, with no Vulkan error or process crash in the trace. This proves that
+the window was presenting frames; it does **not** prove that the scene logic
+was progressing or explain why no useful geometry was submitted.
+
+**Pending:** a bounded I/O trace spanning the transition to black, followed
+by a targeted GE list trace if necessary. Whether the game is waiting on an
+HLE response, loading data, or intentionally displaying blank frames is still
+unverified. There is no evidence yet that a driver workaround, an FPS change,
+or a key-file modification fixes the problem. Do not commit player disc data,
+generated code, captures, saves, or personally identifying paths.
 
 It was not stuck before; it was waiting, and three things were in the way. They are worth writing down in order, because the first one cost a day and was not a missing system call at all.
 

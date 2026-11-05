@@ -10,6 +10,7 @@ on:
       - portablekit
       - CMakeLists.txt
       - host/**
+      - scripts/collect_windows_trace.ps1
   workflow_dispatch:
 
 permissions:
@@ -81,6 +82,7 @@ jobs:
           foreach ($header in @('stb_truetype.h', 'stb_image.h', 'stb_image_write.h')) {
             Copy-Item (Join-Path 'portablekit\third_party' $header) $licenses
           }
+          Copy-Item 'scripts\collect_windows_trace.ps1' $stage
           $readme = @(
             'TENKAWA - EXPERIMENTAL WINDOWS ARM64 BOOTSTRAP'
             'Windows ARM64 bring-up by Azazel5200 / Nexo.'
@@ -93,6 +95,10 @@ jobs:
             ''
             'First test, in PowerShell from the extracted folder:'
             '    .\TenkawaNative.exe --help'
+            'To capture I/O and performance logs after installing your own game:'
+            '    .\collect_windows_trace.ps1'
+            'The script writes a local file under TEMP\Tenkawa-Traces.'
+            'Close the game window to finish the recording; review paths before sharing.'
             ''
             'A separately owned EU ULES-01456 game disc image is required for'
             'later local installation tests. Keep that ISO outside GitHub and'
@@ -109,6 +115,8 @@ jobs:
         run: |
           & '.\out-vulkan\bin\Release\TenkawaNative.exe' --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & pwsh -NoProfile -File '.\out-vulkan\bin\Release\collect_windows_trace.ps1' -Help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload ARM64 bootstrap for local testing
         uses: actions/upload-artifact@v4
@@ -118,5 +126,6 @@ jobs:
             out-vulkan/bin/Release/TenkawaNative.exe
             out-vulkan/bin/Release/*.dll
             out-vulkan/bin/Release/README-EXPERIMENTAL.txt
+            out-vulkan/bin/Release/collect_windows_trace.ps1
             out-vulkan/bin/Release/licenses/**
           retention-days: 30

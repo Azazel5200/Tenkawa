@@ -11,8 +11,16 @@ its `--help` smoke test passed on Windows ARM64 (MSVC), Windows x64 (MSVC) and
 Linux x64 (GCC) in [GitHub Actions run 41936870868](https://github.com/Azazel5200/Tenkawa/actions/runs/41936870868).
 The **Vulkan renderer and shaders compiled** on native Windows ARM64 in
 [run 41937884679](https://github.com/Azazel5200/Tenkawa/actions/runs/41937884679).
-This is a compile-time success only: graphics initialization on a physical GPU,
-ISO installation, rendering, audio, and gameplay remain untested on Windows.
+The relocatable graphics-linked package passed its `--help` smoke test in
+[run 41940576348](https://github.com/Azazel5200/Tenkawa/actions/runs/41940576348).
+
+**First hardware test on 2026-11-05:** The package installed a separately owned
+`ULES-01456` disc image, initialized Vulkan 1.3 on a Qualcomm Adreno X1-45
+under native Windows ARM64, and displayed the game's authentic PSP clock notice
+and opening dialogs in interpreter mode. The next scene was black; the title
+screen and gameplay are **not** established on Windows. See the measured
+diagnosis below. Video playback and streamed music are unavailable in this
+FFmpeg-disabled build.
 
 ## 1. Baseline: game-free native executable
 
@@ -75,7 +83,54 @@ The repository's `docs/MISSING.md` remains the authoritative record of
 observed game-specific blockers. PortableKit's `docs/BUILDING.md` explains
 why full corpus compilation needs significant RAM and limited parallelism.
 
-## 3. Older x64 hardware and legacy graphics
+## 3. Windows ARM64 black-scene diagnosis
+
+The first real Windows ARM64 run used the **interpreter**, not the recompiled
+AOT corpus. The Vulkan window rendered the initial clock and memory-stick
+screens, then stayed black. Its 335 one-second performance samples recorded:
+
+| Interval | Game speed | PSP display lists | Draw operations |
+| --- | --- | --- | --- |
+| First ~75 seconds | Mostly 100%, ~60 FPS | ~60/s | 74–175 per frame |
+| Following ~260 seconds | Mostly 100%, ~60 FPS | ~60/s | 1 per frame |
+
+The transition from 172 to 1 draw was sudden, and the remaining log contained
+no Vulkan error or crash. This is **not evidence of a slow guest CPU**; it is
+consistent with a game/GE scene that no longer submits useful geometry. Whether
+it is waiting for I/O, receiving an incorrect HLE response, or intentionally
+drawing a blank frame is still unknown. The missing `kirk.aes.38` warning is
+not established as causal: the PGD check described in `MISSING.md` did not
+require reading the PGD payload on the previously tested platform.
+
+The next measurement is a bounded I/O trace across the transition to black.
+The experimental package includes `collect_windows_trace.ps1` beside the
+executable; run it in PowerShell after installing the game locally:
+
+```powershell
+.\collect_windows_trace.ps1
+```
+
+Its output goes to the local temporary `Tenkawa-Traces` directory. Reproduce
+the initial prompts, leave the black screen for roughly one minute, close the
+window and inspect the trace. The command enables performance and I/O logs.
+For a subsequent **targeted** display-list trace, use
+`-GeListStart N -GeListCount M` after determining the relevant list index;
+do not dump every command of every frame. As an alternative when script
+execution is disabled, the variables can be set manually before launching:
+
+```powershell
+$env:TENKAWA_TRACE_IO = '1'
+$env:TENKAWA_PERF = 'log'
+.\TenkawaNative.exe *> "$env:TEMP\tenkawa-io.txt"
+```
+
+Do not commit, upload or attach the original ISO, extracted game executable,
+generated guest code or saves. Logs may contain local paths; review them
+before sharing. The installation location is under
+`%APPDATA%\Tenkawa\DBZTTT\`; it is distinct from the original ISO and may
+contain saves that must be preserved before any later cleanup.
+
+## 4. Older x64 hardware and legacy graphics
 
 The eventual low-power x64 target needs its **own measurements** after a
 playable native Windows build exists. PortableKit currently uses a Vulkan
