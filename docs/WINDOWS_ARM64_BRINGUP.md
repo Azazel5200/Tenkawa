@@ -9,7 +9,10 @@ saves or captures belong in Git.
 **Verified on 2026-11-04:** The game-free TenkawaNative bootstrap compiled and
 its `--help` smoke test passed on Windows ARM64 (MSVC), Windows x64 (MSVC) and
 Linux x64 (GCC) in [GitHub Actions run 41936870868](https://github.com/Azazel5200/Tenkawa/actions/runs/41936870868).
-The Vulkan renderer, ISO installation and gameplay remain untested on Windows.
+The **Vulkan renderer and shaders compiled** on native Windows ARM64 in
+[run 41937884679](https://github.com/Azazel5200/Tenkawa/actions/runs/41937884679).
+This is a compile-time success only: graphics initialization on a physical GPU,
+ISO installation, rendering, audio, and gameplay remain untested on Windows.
 
 ## 1. Baseline: game-free native executable
 
@@ -41,6 +44,15 @@ To refresh the framework submodule in an existing checkout, run
 commit pinned by Tenkawa; it does not silently pull a newer framework version.
 
 ## 2. Renderer and interpreter bring-up
+
+The [Windows ARM64 Vulkan workflow](../.github/workflows/windows-arm64-renderer.yml)
+also publishes a **game-free experimental ZIP** when all its checks pass. It
+uses `PORTABLEKIT_RELEASE=ON` so the executable does not contain a fallback
+path into the CI checkout. Download the artifact from that workflow's run
+page while it is retained; unzip it into a new directory. The package includes
+the native host, the SDL3/Vulkan loader dependencies and their license notices,
+**not** the executable or assets from the PSP game. It has FFmpeg disabled and
+should not be mistaken for a playable release.
 
 1. Build a **separate** configuration with SDL3, the Vulkan SDK and
    `glslangValidator` available, and `-DPORTABLEKIT_RENDERER=ON`. Check that

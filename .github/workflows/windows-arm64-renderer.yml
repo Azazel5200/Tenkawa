@@ -42,7 +42,7 @@ jobs:
           $shaderCompiler = Get-ChildItem (Join-Path $vcpkgRoot 'installed\arm64-windows\tools') -Filter glslangValidator.exe -Recurse -File | Select-Object -First 1
           if (-not $shaderCompiler) { throw 'vcpkg did not install glslangValidator.exe' }
           $toolchain = Join-Path $vcpkgRoot 'scripts\buildsystems\vcpkg.cmake'
-          $configureOutput = & cmake -S . -B out-vulkan -G 'Visual Studio 18 2026' -A ARM64 "-DCMAKE_TOOLCHAIN_FILE=$toolchain" "-DPORTABLEKIT_GLSLANG=$($shaderCompiler.FullName)" -DPORTABLEKIT_RENDERER=ON -DPORTABLEKIT_FFMPEG=OFF -DPSPRECOMP_BUILD_TESTS=OFF -DPSPRECOMP_CCACHE=OFF 2>&1
+          $configureOutput = & cmake -S . -B out-vulkan -G 'Visual Studio 18 2026' -A ARM64 "-DCMAKE_TOOLCHAIN_FILE=$toolchain" "-DPORTABLEKIT_GLSLANG=$($shaderCompiler.FullName)" -DPORTABLEKIT_RENDERER=ON -DPORTABLEKIT_RELEASE=ON -DPORTABLEKIT_FFMPEG=OFF -DPSPRECOMP_BUILD_TESTS=OFF -DPSPRECOMP_CCACHE=OFF 2>&1
           $configureOutput | Out-Host
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not ($configureOutput -match 'TenkawaNative: Vulkan renderer enabled')) {
@@ -81,8 +81,28 @@ jobs:
           foreach ($header in @('stb_truetype.h', 'stb_image.h', 'stb_image_write.h')) {
             Copy-Item (Join-Path 'portablekit\third_party' $header) $licenses
           }
-          'Experimental Windows ARM64 build. No game code or data is included. Not yet verified playable; FFmpeg is disabled. Use only with a separately obtained supported game copy.' |
-            Set-Content -Path (Join-Path $stage 'README-EXPERIMENTAL.txt') -Encoding utf8
+          $readme = @(
+            'TENKAWA - EXPERIMENTAL WINDOWS ARM64 BOOTSTRAP'
+            'Windows ARM64 bring-up by Azazel5200 / Nexo.'
+            'Based on the Tenkawa / PortableKit projects; see the bundled licenses.'
+            ''
+            'THIS IS NOT A PLAYABLE GAME RELEASE.'
+            'No PSP executable, generated guest code, game files, save files or'
+            'copyrighted assets are supplied. Media support (FFmpeg) is disabled.'
+            'GPU rendering, audio, input and gameplay have not been verified.'
+            ''
+            'First test, in PowerShell from the extracted folder:'
+            '    .\TenkawaNative.exe --help'
+            ''
+            'A separately owned EU ULES-01456 game disc image is required for'
+            'later local installation tests. Keep that ISO outside GitHub and'
+            'do not upload its contents, crash dumps containing game data, or'
+            'generated guest-code files to the repository.'
+            ''
+            'The old Celeron tablet is NOT a target of this Vulkan snapshot.'
+            'A future Direct3D or OpenGL backend must be implemented first.'
+          )
+          $readme | Set-Content -Path (Join-Path $stage 'README-EXPERIMENTAL.txt') -Encoding utf8
 
       - name: Smoke test graphics-linked executable
         shell: pwsh
@@ -99,4 +119,4 @@ jobs:
             out-vulkan/bin/Release/*.dll
             out-vulkan/bin/Release/README-EXPERIMENTAL.txt
             out-vulkan/bin/Release/licenses/**
-          retention-days: 7
+          retention-days: 30
