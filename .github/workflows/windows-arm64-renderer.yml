@@ -51,3 +51,52 @@ jobs:
 
       - name: Compile renderer and shaders
         run: cmake --build out-vulkan --target TenkawaNative --config Release --parallel 2
+
+      - name: Stage game-free ARM64 bootstrap
+        shell: pwsh
+        run: |
+          $stage = 'out-vulkan\bin\Release'
+          if (-not (Test-Path "$stage\TenkawaNative.exe")) { throw 'Missing ARM64 executable' }
+          $vcpkgLibs = Join-Path $env:VCPKG_INSTALLATION_ROOT 'installed\arm64-windows'
+          foreach ($dll in @('SDL3.dll', 'vulkan-1.dll')) {
+            $source = Join-Path $vcpkgLibs "bin\$dll"
+            if (-not (Test-Path $source)) { throw "Missing graphics dependency: $dll" }
+            Copy-Item $source $stage -Force
+          }
+          $licenses = Join-Path $stage 'licenses'
+          New-Item -ItemType Directory -Force $licenses | Out-Null
+          $notices = @{
+            'Tenkawa-LICENSE.txt' = 'LICENSE'
+            'PortableKit-LICENSE.txt' = 'portablekit\LICENSE'
+            'DearImGui-LICENSE.txt' = 'portablekit\third_party\imgui\LICENSE.txt'
+            'tiny-AES-UNLICENSE.txt' = 'portablekit\third_party\tiny_aes\UNLICENSE'
+            'xxHash-LICENSE.txt' = 'portablekit\third_party\xxhash\LICENSE'
+            'SDL3-LICENSE.txt' = (Join-Path $vcpkgLibs 'share\sdl3\copyright')
+            'VulkanLoader-LICENSE.txt' = (Join-Path $vcpkgLibs 'share\vulkan-loader\copyright')
+          }
+          foreach ($name in $notices.Keys) {
+            if (-not (Test-Path $notices[$name])) { throw "Missing license file: $name" }
+            Copy-Item $notices[$name] (Join-Path $licenses $name)
+          }
+          foreach ($header in @('stb_truetype.h', 'stb_image.h', 'stb_image_write.h')) {
+            Copy-Item (Join-Path 'portablekit\third_party' $header) $licenses
+          }
+          'Experimental Windows ARM64 build. No game code or data is included. Not yet verified playable; FFmpeg is disabled. Use only with a separately obtained supported game copy.' |
+            Set-Content -Path (Join-Path $stage 'README-EXPERIMENTAL.txt') -Encoding utf8
+
+      - name: Smoke test graphics-linked executable
+        shell: pwsh
+        run: |
+          & '.\out-vulkan\bin\Release\TenkawaNative.exe' --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload ARM64 bootstrap for local testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tenkawa-Windows-ARM64-Vulkan-EXPERIMENTAL
+          path: |
+            out-vulkan/bin/Release/TenkawaNative.exe
+            out-vulkan/bin/Release/*.dll
+            out-vulkan/bin/Release/README-EXPERIMENTAL.txt
+            out-vulkan/bin/Release/licenses/**
+          retention-days: 7
