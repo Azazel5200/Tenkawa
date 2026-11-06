@@ -1,0 +1,131 @@
+# Build Tenkawa's Vulkan backend on real Windows ARM64 hardware without game
+# data. This checks compilation only; it does not prove the game renders.
+name: Windows ARM64 Vulkan build
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/windows-arm64-renderer.yml
+      - .gitmodules
+      - portablekit
+      - CMakeLists.txt
+      - host/**
+      - scripts/collect_windows_trace.ps1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tenkawa-vulkan-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  renderer:
+    runs-on: windows-11-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install native ARM64 graphics dependencies
+        shell: pwsh
+        run: |
+          $vcpkg = Join-Path $env:VCPKG_INSTALLATION_ROOT 'vcpkg.exe'
+          & $vcpkg install 'sdl3[vulkan]:arm64-windows' 'vulkan-loader:arm64-windows' 'glslang[tools]:arm64-windows'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Configure Vulkan renderer
+        shell: pwsh
+        run: |
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          $shaderCompiler = Get-ChildItem (Join-Path $vcpkgRoot 'installed\arm64-windows\tools') -Filter glslangValidator.exe -Recurse -File | Select-Object -First 1
+          if (-not $shaderCompiler) { throw 'vcpkg did not install glslangValidator.exe' }
+          $toolchain = Join-Path $vcpkgRoot 'scripts\buildsystems\vcpkg.cmake'
+          $configureOutput = & cmake -S . -B out-vulkan -G 'Visual Studio 18 2026' -A ARM64 "-DCMAKE_TOOLCHAIN_FILE=$toolchain" "-DPORTABLEKIT_GLSLANG=$($shaderCompiler.FullName)" -DPORTABLEKIT_RENDERER=ON -DPORTABLEKIT_RELEASE=ON -DPORTABLEKIT_FFMPEG=OFF -DPSPRECOMP_BUILD_TESTS=OFF -DPSPRECOMP_CCACHE=OFF 2>&1
+          $configureOutput | Out-Host
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($configureOutput -match 'TenkawaNative: Vulkan renderer enabled')) {
+            throw 'CMake configured a headless build instead of the Vulkan renderer'
+          }
+
+      - name: Compile renderer and shaders
+        run: cmake --build out-vulkan --target TenkawaNative --config Release --parallel 2
+
+      - name: Stage game-free ARM64 bootstrap
+        shell: pwsh
+        run: |
+          $stage = 'out-vulkan\bin\Release'
+          if (-not (Test-Path "$stage\TenkawaNative.exe")) { throw 'Missing ARM64 executable' }
+          $vcpkgLibs = Join-Path $env:VCPKG_INSTALLATION_ROOT 'installed\arm64-windows'
+          foreach ($dll in @('SDL3.dll', 'vulkan-1.dll')) {
+            $source = Join-Path $vcpkgLibs "bin\$dll"
+            if (-not (Test-Path $source)) { throw "Missing graphics dependency: $dll" }
+            Copy-Item $source $stage -Force
+          }
+          $licenses = Join-Path $stage 'licenses'
+          New-Item -ItemType Directory -Force $licenses | Out-Null
+          $notices = @{
+            'Tenkawa-LICENSE.txt' = 'LICENSE'
+            'PortableKit-LICENSE.txt' = 'portablekit\LICENSE'
+            'DearImGui-LICENSE.txt' = 'portablekit\third_party\imgui\LICENSE.txt'
+            'tiny-AES-UNLICENSE.txt' = 'portablekit\third_party\tiny_aes\UNLICENSE'
+            'xxHash-LICENSE.txt' = 'portablekit\third_party\xxhash\LICENSE'
+            'SDL3-LICENSE.txt' = (Join-Path $vcpkgLibs 'share\sdl3\copyright')
+            'VulkanLoader-LICENSE.txt' = (Join-Path $vcpkgLibs 'share\vulkan-loader\copyright')
+          }
+          foreach ($name in $notices.Keys) {
+            if (-not (Test-Path $notices[$name])) { throw "Missing license file: $name" }
+            Copy-Item $notices[$name] (Join-Path $licenses $name)
+          }
+          foreach ($header in @('stb_truetype.h', 'stb_image.h', 'stb_image_write.h')) {
+            Copy-Item (Join-Path 'portablekit\third_party' $header) $licenses
+          }
+          Copy-Item 'scripts\collect_windows_trace.ps1' $stage
+          $readme = @(
+            'TENKAWA - EXPERIMENTAL WINDOWS ARM64 BOOTSTRAP'
+            'Windows ARM64 bring-up by Azazel5200 / Nexo.'
+            'Based on the Tenkawa / PortableKit projects; see the bundled licenses.'
+            ''
+            'THIS IS NOT A PLAYABLE GAME RELEASE.'
+            'No PSP executable, generated guest code, game files, save files or'
+            'copyrighted assets are supplied. Media support (FFmpeg) is disabled.'
+            'GPU rendering, audio, input and gameplay have not been verified.'
+            ''
+            'First test, in PowerShell from the extracted folder:'
+            '    .\TenkawaNative.exe --help'
+            'To capture I/O and performance logs after installing your own game:'
+            '    .\collect_windows_trace.ps1'
+            'The script writes a local file under TEMP\Tenkawa-Traces.'
+            'Close the game window to finish the recording; review paths before sharing.'
+            ''
+            'A separately owned EU ULES-01456 game disc image is required for'
+            'later local installation tests. Keep that ISO outside GitHub and'
+            'do not upload its contents, crash dumps containing game data, or'
+            'generated guest-code files to the repository.'
+            ''
+            'The old Celeron tablet is NOT a target of this Vulkan snapshot.'
+            'A future Direct3D or OpenGL backend must be implemented first.'
+          )
+          $readme | Set-Content -Path (Join-Path $stage 'README-EXPERIMENTAL.txt') -Encoding utf8
+
+      - name: Smoke test graphics-linked executable
+        shell: pwsh
+        run: |
+          & '.\out-vulkan\bin\Release\TenkawaNative.exe' --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & pwsh -NoProfile -File '.\out-vulkan\bin\Release\collect_windows_trace.ps1' -Help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload ARM64 bootstrap for local testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tenkawa-Windows-ARM64-Vulkan-EXPERIMENTAL
+          path: |
+            out-vulkan/bin/Release/TenkawaNative.exe
+            out-vulkan/bin/Release/*.dll
+            out-vulkan/bin/Release/README-EXPERIMENTAL.txt
+            out-vulkan/bin/Release/collect_windows_trace.ps1
+            out-vulkan/bin/Release/licenses/**
+          retention-days: 30
