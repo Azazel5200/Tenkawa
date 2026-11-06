@@ -138,13 +138,17 @@ run each version with these settings (PowerShell):
 
 ```powershell
 $env:TENKAWA_TRACE_GE_SUBMIT = '64'
+$env:TENKAWA_TRACE_GE_SUBMIT_FROM = '4800' # Optional: start near 80 s of PSP time
 $env:TENKAWA_PERF = 'log'
 $env:PSPRECOMP_HLE_HISTOGRAM = '1'
 .\TenkawaNative.exe
 ```
 
 Compare `[ge-submit]` entries and the HLE call histogram between the known-good
-interpreter build and the AOT build. If only AOT loses submissions, repeat the
+interpreter build and the AOT build. The optional `TENKAWA_TRACE_GE_SUBMIT_FROM`
+skips early title-screen submissions until the selected PSP vblank; use the same
+target and scripted inputs in both builds, and remove it to trace startup.
+If only AOT loses submissions, repeat the
 AOT run with `$env:PSPRECOMP_NO_CHAIN = '1'` to test whether cross-unit native
 call chaining affects the result; then remove that variable. Do not use the
 no-chain run for performance estimates. Neither outcome is known on ARM64 yet.
