@@ -95,10 +95,14 @@ workflow can validate compilation, architecture and `--help`, **not** music
 decoding or the correctness of generated game code without a private game
 image. Its artifact is an experiment until a real-machine test succeeds.
 
-**Language remains a separate issue.** The European disc supports multiple
-languages, but the current published profile has no PSP Spanish setting yet.
-The game displayed English in the first ARM64 gameplay test. Any future locale
-fix must be verified on hardware without changing the player's game files.
+**Language remains a separate hardware check.** The European disc supports
+multiple languages, but the first ARM64 gameplay test displayed English.
+PortableKit's development branch now supports a per-port PSP console language
+override. Once Tenkawa pins that framework commit, set
+`TENKAWA_SYSTEM_LANGUAGE=es` (or `3`) **before launching** to request Spanish
+without modifying the player's game files. This changes what
+`sceUtilityGetSystemParamInt` and `sceImposeGetLanguageMode` report; it does not
+guarantee that the game will honor it until tested in a fresh launch.
 
 Once a Windows ARM64 Visual Studio toolchain is available **on the player's
 own machine**, the source checkout can recompile a locally installed
@@ -113,8 +117,9 @@ pwsh -NoProfile -File .\scripts\build_windows_arm64_aot.ps1 `
     -GenerateOnly
 ```
 
-The generation-only pass creates ignored local `analysis/` and `generated/`
-folders. Omit `-GenerateOnly` to configure and compile the entire native AOT
+The script rejects non-ARM64 host and tool executables, then reports the
+generated C++ unit and code-address counts. The generation-only pass creates
+ignored local `analysis/` and `generated/` folders. Omit `-GenerateOnly` to configure and compile the entire native AOT
 corpus; this is a resource-intensive, potentially multi-hour step. It is
 **not** verified end-to-end yet: a successful compilation must still be
 followed by a real ARM64 gameplay and display-list comparison.
