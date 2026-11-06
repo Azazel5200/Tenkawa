@@ -1,5 +1,7 @@
 # Recompile an owner's locally installed EBOOT.ELF to native C++ on Windows.
 # The game executable and generated source never leave the owner's machine.
+# -GenerateOnly also works directly from the unpacked ARM64 media toolkit:
+# no Visual Studio, CMake project, or game data in GitHub is required.
 param(
     [string]$BuildDirectory = 'out-media',
     [string]$EbootPath = '',
@@ -8,16 +10,22 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$project = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$sourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $build = if ([IO.Path]::IsPathRooted($BuildDirectory)) {
     [IO.Path]::GetFullPath($BuildDirectory)
 } else {
-    [IO.Path]::GetFullPath((Join-Path $project $BuildDirectory))
+    [IO.Path]::GetFullPath((Join-Path $sourceRoot $BuildDirectory))
 }
 
-if (-not (Test-Path -LiteralPath (Join-Path $build 'CMakeCache.txt') -PathType Leaf)) {
-    throw "The ARM64 build directory is not configured: $build"
+$configured = Test-Path -LiteralPath (Join-Path $build 'CMakeCache.txt') -PathType Leaf
+$standalone = -not $configured -and
+    (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'psp_analyze.exe') -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'psp_recomp.exe') -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'TenkawaNative.exe') -PathType Leaf)
+if (-not $configured -and -not $standalone) {
+    throw "No configured ARM64 build at $build or unpacked media toolkit beside this script."
 }
+$project = if ($standalone) { $PSScriptRoot } else { $sourceRoot }
 
 function Assert-Arm64Executable([string]$Path) {
     $bytes = [System.IO.File]::ReadAllBytes($Path)
@@ -35,21 +43,36 @@ function Assert-Arm64Executable([string]$Path) {
     }
 }
 
-$analyze = Join-Path $build 'portablekit\Release\psp_analyze.exe'
-$recompile = Join-Path $build 'portablekit\Release\psp_recomp.exe'
+$analyze = if ($standalone) {
+    Join-Path $PSScriptRoot 'psp_analyze.exe'
+} else {
+    Join-Path $build 'portablekit\Release\psp_analyze.exe'
+}
+$recompile = if ($standalone) {
+    Join-Path $PSScriptRoot 'psp_recomp.exe'
+} else {
+    Join-Path $build 'portablekit\Release\psp_recomp.exe'
+}
 foreach ($tool in @($analyze, $recompile)) {
     if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) {
         throw "Missing recompiler tool: $tool. Build targets psp_analyze and psp_recomp first."
     }
     Assert-Arm64Executable $tool
 }
-$hostExe = Join-Path $build 'bin\Release\TenkawaNative.exe'
+$hostExe = if ($standalone) {
+    Join-Path $PSScriptRoot 'TenkawaNative.exe'
+} else {
+    Join-Path $build 'bin\Release\TenkawaNative.exe'
+}
 if (-not (Test-Path -LiteralPath $hostExe -PathType Leaf)) {
     throw "Missing native host: $hostExe. Build TenkawaNative first."
 }
 Assert-Arm64Executable $hostExe
 Write-Host 'Native ARM64 host and recompiler tools verified.'
 if ($VerifyToolsOnly) { return }
+if ($standalone -and -not $GenerateOnly) {
+    throw 'The portable toolkit supports -GenerateOnly; full AOT compilation needs a configured ARM64 source checkout.'
+}
 
 if ([string]::IsNullOrWhiteSpace($EbootPath)) {
     $candidates = @()
@@ -81,7 +104,13 @@ if ($report.translation_units -lt 1 -or $report.unique_emitted_instructions -lt 
     throw 'The AOT generation report contains no native translation units or emitted code.'
 }
 Write-Host ("AOT: {0} C++ units, {1} code addresses, {2} function seeds." -f $report.translation_units, $report.unique_emitted_instructions, $report.discovered_function_seeds)
-if ($GenerateOnly) { return }
+if ($GenerateOnly) {
+    Write-Host "Generated code was saved locally at $generated"
+    if ($standalone) {
+        Write-Host 'To compile it, use the matching Tenkawa source checkout with an ARM64 compiler.'
+    }
+    return
+}
 
 # Regenerate CMake after its source list changes. Existing ARM64 compiler,
 # renderer and FFmpeg settings are retained from the checked build cache.
