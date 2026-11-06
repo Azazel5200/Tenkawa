@@ -148,6 +148,10 @@ Compare `[ge-submit]` entries and the HLE call histogram between the known-good
 interpreter build and the AOT build. The optional `TENKAWA_TRACE_GE_SUBMIT_FROM`
 skips early title-screen submissions until the selected PSP vblank; use the same
 target and scripted inputs in both builds, and remove it to trace startup.
+With both runtime logs on your machine, run
+`python portablekit/tools/compare_ge_traces.py interpreter.log aot.log` to
+compare the PSP caller sites. The script works offline and only reads the
+logs; it cannot establish whether the two runs reached the same scene.
 If only AOT loses submissions, repeat the
 AOT run with `$env:PSPRECOMP_NO_CHAIN = '1'` to test whether cross-unit native
 call chaining affects the result; then remove that variable. Do not use the
