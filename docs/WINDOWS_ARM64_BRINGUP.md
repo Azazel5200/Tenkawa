@@ -109,11 +109,26 @@ without modifying the player's game files. This changes what
 `sceUtilityGetSystemParamInt` and `sceImposeGetLanguageMode` report; it does not
 guarantee that the game will honor it until tested in a fresh launch.
 
+The unpacked **media toolkit ZIP** can generate AOT C++ from the owner's
+already prepared `EBOOT.ELF` without requiring Visual Studio, CMake or a
+source checkout. In PowerShell, from the directory containing the unpacked
+`TenkawaNative.exe`, `psp_recomp.exe`, `psp_analyze.exe` and script:
+
+```powershell
+.\build_windows_arm64_aot.ps1 -GenerateOnly -EbootPath 'PATH_TO_YOUR_LOCAL_EBOOT.ELF'
+```
+
+This first pass puts an `analysis/` report and `generated/` C++ files beside
+the script. They are local, potentially large and must not be uploaded. The
+script validates the ARM64 executables before running them, and the resulting
+report includes the generated code and translation-unit counts. The toolkit
+cannot compile the game by itself.
+
 Once a Windows ARM64 Visual Studio toolchain is available **on the player's
-own machine**, the source checkout can recompile a locally installed
-`EBOOT.ELF` with [build_windows_arm64_aot.ps1](../scripts/build_windows_arm64_aot.ps1).
-Use the build directory configured for that machine; do not try to compile a
-game corpus on GitHub Actions or upload it as a CI artifact. For example:
+own machine**, the matching source checkout can both generate and compile
+locally with [build_windows_arm64_aot.ps1](../scripts/build_windows_arm64_aot.ps1).
+Use its configured build directory; do not compile a private game corpus on
+GitHub Actions or upload it as a CI artifact. For example:
 
 ```powershell
 pwsh -NoProfile -File .\scripts\build_windows_arm64_aot.ps1 `
@@ -122,10 +137,10 @@ pwsh -NoProfile -File .\scripts\build_windows_arm64_aot.ps1 `
     -GenerateOnly
 ```
 
-The script rejects non-ARM64 host and tool executables, then reports the
-generated C++ unit and code-address counts. The generation-only pass creates
-ignored local `analysis/` and `generated/` folders. Omit `-GenerateOnly` to configure and compile the entire native AOT
-corpus; this is a resource-intensive, potentially multi-hour step. It is
+The checkout's generation-only pass creates ignored local `analysis/` and
+`generated/` folders. Omit `-GenerateOnly` in **source-checkout mode only** to
+configure and compile the entire native AOT corpus; this is a
+resource-intensive, potentially multi-hour step. It is
 **not** verified end-to-end yet: a successful compilation must still be
 followed by a real ARM64 gameplay and display-list comparison.
 
