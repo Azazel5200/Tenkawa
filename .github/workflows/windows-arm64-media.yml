@@ -1,0 +1,148 @@
+# An independent, game-free ARM64 media/AOT toolchain experiment. Keep the
+# known-good graphics-only workflow available while FFmpeg is brought up.
+name: Windows ARM64 media and AOT tools
+
+on:
+  push:
+    branches: [dev/windows-arm64-bringup]
+    paths:
+      - .github/workflows/windows-arm64-media.yml
+      - host/tenkawa_profile.cpp
+      - portablekit
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tenkawa-media-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-media:
+    runs-on: windows-11-arm
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install native graphics and audio libraries
+        shell: pwsh
+        run: |
+          $vcpkg = Join-Path $env:VCPKG_INSTALLATION_ROOT 'vcpkg.exe'
+          # core disables FFmpeg's default extra components: only its codec
+          # library (and mandatory avutil) is needed to decode ATRAC and AVC.
+          & $vcpkg install 'sdl3[vulkan]:arm64-windows' 'vulkan-loader:arm64-windows' 'glslang[tools]:arm64-windows' 'ffmpeg[core,avcodec]:arm64-windows'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Configure native ARM64 with media decoding
+        shell: pwsh
+        run: |
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          $tools = Join-Path $vcpkgRoot 'installed\arm64-windows\tools'
+          $shaderCompiler = Get-ChildItem $tools -Filter glslangValidator.exe -Recurse -File | Select-Object -First 1
+          if (-not $shaderCompiler) { throw 'Missing glslangValidator.exe' }
+          $toolchain = Join-Path $vcpkgRoot 'scripts\buildsystems\vcpkg.cmake'
+          $configureOutput = & cmake -S . -B out-media -G 'Visual Studio 18 2026' -A ARM64 "-DCMAKE_TOOLCHAIN_FILE=$toolchain" "-DPORTABLEKIT_GLSLANG=$($shaderCompiler.FullName)" -DPORTABLEKIT_RENDERER=ON -DPORTABLEKIT_RELEASE=ON -DPORTABLEKIT_FFMPEG=system -DPSPRECOMP_BUILD_TESTS=ON -DPSPRECOMP_CCACHE=OFF 2>&1
+          $configureOutput | Out-Host
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($configureOutput -match 'TenkawaNative: Vulkan renderer enabled')) {
+            throw 'The renderer was not enabled'
+          }
+          if (-not ($configureOutput -match 'portablekit: system FFmpeg; music and movies enabled')) {
+            throw 'CMake did not enable FFmpeg'
+          }
+
+      - name: Compile game-free renderer and native recompiler tools
+        run: cmake --build out-media --target TenkawaNative psp_recomp psp_analyze psprecomp_tests --config Release --parallel 2
+
+      - name: Run ARM64 recompiler semantic tests
+        run: ctest --test-dir out-media -C Release -R '^psprecomp_tests$' --output-on-failure
+
+      - name: Verify offline local AOT preparation script
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -File '.\scripts\build_windows_arm64_aot.ps1' -BuildDirectory out-media -VerifyToolsOnly
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Stage all native dependencies with licenses
+        shell: pwsh
+        run: |
+          $stage = 'out-media\bin\Release'
+          $vcpkgLibs = Join-Path $env:VCPKG_INSTALLATION_ROOT 'installed\arm64-windows'
+          if (-not (Test-Path "$stage\TenkawaNative.exe")) { throw 'Missing native host executable' }
+          foreach ($tool in @('psp_recomp.exe', 'psp_analyze.exe')) {
+            $found = Get-ChildItem 'out-media\portablekit' -Filter $tool -Recurse -File | Where-Object { $_.DirectoryName -match 'Release' } | Select-Object -First 1
+            if (-not $found) { throw "Missing $tool" }
+            Copy-Item $found.FullName (Join-Path $stage $tool) -Force
+          }
+          $libraries = Get-ChildItem (Join-Path $vcpkgLibs 'bin') -Filter '*.dll' -File
+          if (-not ($libraries | Where-Object { $_.Name -match '^avcodec.*\.dll$' })) { throw 'No ARM64 avcodec DLL' }
+          if (-not ($libraries | Where-Object { $_.Name -match '^avutil.*\.dll$' })) { throw 'No ARM64 avutil DLL' }
+          foreach ($library in $libraries) { Copy-Item $library.FullName $stage -Force }
+
+          # Fail closed if an x64 DLL or executable sneaks into the ARM64 ZIP.
+          foreach ($binary in (Get-ChildItem $stage -File | Where-Object { $_.Extension -in '.exe', '.dll' })) {
+            $bytes = [System.IO.File]::ReadAllBytes($binary.FullName)
+            $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+            $machine = [BitConverter]::ToUInt16($bytes, $pe + 4)
+            if ($machine -ne 0xAA64) { throw "Non-ARM64 executable: $($binary.Name) (0x$($machine.ToString('X4')))" }
+          }
+
+          $licenses = Join-Path $stage 'licenses'
+          New-Item -ItemType Directory -Force $licenses | Out-Null
+          $notices = @{
+            'Tenkawa-LICENSE.txt' = 'LICENSE'
+            'PortableKit-LICENSE.txt' = 'portablekit\LICENSE'
+            'DearImGui-LICENSE.txt' = 'portablekit\third_party\imgui\LICENSE.txt'
+            'tiny-AES-UNLICENSE.txt' = 'portablekit\third_party\tiny_aes\UNLICENSE'
+            'xxHash-LICENSE.txt' = 'portablekit\third_party\xxhash\LICENSE'
+          }
+          foreach ($name in $notices.Keys) {
+            if (-not (Test-Path $notices[$name])) { throw "Missing notice: $name" }
+            Copy-Item $notices[$name] (Join-Path $licenses $name)
+          }
+          foreach ($header in @('stb_truetype.h', 'stb_image.h', 'stb_image_write.h')) {
+            Copy-Item (Join-Path 'portablekit\third_party' $header) $licenses
+          }
+          Copy-Item 'scripts\build_windows_arm64_aot.ps1' $stage
+          # The full set of vcpkg notices covers the staged DLL dependencies.
+          foreach ($notice in (Get-ChildItem (Join-Path $vcpkgLibs 'share') -Filter copyright -Recurse -File)) {
+            $name = "vcpkg-$($notice.Directory.Name)-LICENSE.txt"
+            Copy-Item $notice.FullName (Join-Path $licenses $name) -Force
+          }
+          @(
+            'TENKAWA - EXPERIMENTAL WINDOWS ARM64 MEDIA / AOT TOOLKIT'
+            'No PSP game data or generated guest code is included.'
+            'The host and recompiler tools are compiled for native ARM64.'
+            'FFmpeg libraries are dynamically linked; see licenses/.'
+            'Neither music playback nor AOT gameplay is verified by CI.'
+            'The existing graphics-only build remains the known-good baseline.'
+            'Generating your own AOT requires a checkout of the Tenkawa source'
+            'and a configured Windows ARM64 C++ build toolchain. The included'
+            'build_windows_arm64_aot.ps1 is maintained under scripts/ there.'
+            ''
+            'The port needs your separately owned European ULES-01456 disc.'
+            'Keep that disc, saves, keys and generated C++ on your computer.'
+          ) | Set-Content (Join-Path $stage 'README-EXPERIMENTAL.txt') -Encoding utf8
+
+      - name: Smoke test native host and tool packages
+        shell: pwsh
+        run: |
+          & '.\out-media\bin\Release\TenkawaNative.exe' --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload game-free ARM64 media toolkit
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tenkawa-Windows-ARM64-Media-AOT-EXPERIMENTAL
+          path: |
+            out-media/bin/Release/TenkawaNative.exe
+            out-media/bin/Release/psp_recomp.exe
+            out-media/bin/Release/psp_analyze.exe
+            out-media/bin/Release/build_windows_arm64_aot.ps1
+            out-media/bin/Release/*.dll
+            out-media/bin/Release/README-EXPERIMENTAL.txt
+            out-media/bin/Release/licenses/**
+          retention-days: 30

@@ -14,13 +14,14 @@ The **Vulkan renderer and shaders compiled** on native Windows ARM64 in
 The relocatable graphics-linked package passed its `--help` smoke test in
 [run 41940576348](https://github.com/Azazel5200/Tenkawa/actions/runs/41940576348).
 
-**First hardware test on 2026-11-05:** The package installed a separately owned
-`ULES-01456` disc image, initialized Vulkan 1.3 on a Qualcomm Adreno X1-45
-under native Windows ARM64, and displayed the game's authentic PSP clock notice
-and opening dialogs in interpreter mode. The next scene was black; the title
-screen and gameplay are **not** established on Windows. See the measured
-diagnosis below. Video playback and streamed music are unavailable in this
-FFmpeg-disabled build.
+**Hardware update on 2026-11-06:** The same interpreter-mode ARM64 Vulkan
+bootstrap progressed from the authentic PSP opening screens all the way through
+the title, menus, a combat encounter and its defeat/results screen after the
+player supplied locally verified PGD keys. The earlier black screen is no
+longer the interpreter blocker. Combat remains slow, with a measured mean of
+23.5 FPS across 414 one-second samples, and the FFmpeg-disabled build has
+effect sounds but no streamed music. **This is not yet a compiled AOT port.**
+See the latest result in [MISSING.md](MISSING.md).
 
 ## 1. Baseline: game-free native executable
 
@@ -83,7 +84,42 @@ The repository's `docs/MISSING.md` remains the authoritative record of
 observed game-specific blockers. PortableKit's `docs/BUILDING.md` explains
 why full corpus compilation needs significant RAM and limited parallelism.
 
-## 3. Windows ARM64 black-scene diagnosis
+### Independent ARM64 media and AOT-tool build
+
+The experimental [media/AOT workflow](../.github/workflows/windows-arm64-media.yml)
+builds a **second** native ARM64 ZIP, without changing the graphics-only
+baseline. It asks vcpkg for ARM64 FFmpeg codec libraries, enables FFmpeg at
+configure time, compiles the port and the `psp_recomp`/`psp_analyze` tools,
+and packages only host-side executables, DLLs and dependency notices. The
+workflow can validate compilation, architecture and `--help`, **not** music
+decoding or the correctness of generated game code without a private game
+image. Its artifact is an experiment until a real-machine test succeeds.
+
+**Language remains a separate issue.** The European disc supports multiple
+languages, but the current published profile has no PSP Spanish setting yet.
+The game displayed English in the first ARM64 gameplay test. Any future locale
+fix must be verified on hardware without changing the player's game files.
+
+Once a Windows ARM64 Visual Studio toolchain is available **on the player's
+own machine**, the source checkout can recompile a locally installed
+`EBOOT.ELF` with [build_windows_arm64_aot.ps1](../scripts/build_windows_arm64_aot.ps1).
+Use the build directory configured for that machine; do not try to compile a
+game corpus on GitHub Actions or upload it as a CI artifact. For example:
+
+```powershell
+pwsh -NoProfile -File .\scripts\build_windows_arm64_aot.ps1 `
+    -BuildDirectory out-media `
+    -EbootPath 'PATH_TO_YOUR_LOCAL_EBOOT.ELF' `
+    -GenerateOnly
+```
+
+The generation-only pass creates ignored local `analysis/` and `generated/`
+folders. Omit `-GenerateOnly` to configure and compile the entire native AOT
+corpus; this is a resource-intensive, potentially multi-hour step. It is
+**not** verified end-to-end yet: a successful compilation must still be
+followed by a real ARM64 gameplay and display-list comparison.
+
+## 3. Original Windows ARM64 black-scene diagnosis (historical)
 
 The first real Windows ARM64 run used the **interpreter**, not the recompiled
 AOT corpus. The Vulkan window rendered the initial clock and memory-stick
@@ -98,11 +134,12 @@ The transition from 172 to 1 draw was sudden, and the remaining log contained
 no Vulkan error or crash. This is **not evidence of a slow guest CPU**; it is
 consistent with a game/GE scene that no longer submits useful geometry. Whether
 it is waiting for I/O, receiving an incorrect HLE response, or intentionally
-drawing a blank frame is still unknown. The missing `kirk.aes.38` warning is
-not established as causal: the PGD check described in `MISSING.md` did not
-require reading the PGD payload on the previously tested platform.
+drawing a blank frame was then unknown. The later I/O trace did identify
+repeated `kirk.aes.38` key failures, and a private verified key file let the
+interpreter reach the title and combat. The original trace remains useful as
+historical evidence; it does **not** describe the latest boot outcome.
 
-The next measurement is a bounded I/O trace across the transition to black.
+The diagnostic used a bounded I/O trace across the transition to black.
 The experimental package includes `collect_windows_trace.ps1` beside the
 executable; run it in PowerShell after installing the game locally:
 

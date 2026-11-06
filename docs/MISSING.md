@@ -13,6 +13,37 @@ MoltenVK. The independently measured Windows ARM64 result is noted separately.
 
 **Only the corpus-free build draws.** The recompiled build executes **one display list in a whole run** where the interpreter executes one per frame, so it presents nothing and its window is black. That is [PortableKit#20](https://github.com/TeamGDB/PortableKit/issues/20) and it is the thing to fix before anything else here can be judged by looking at it. An earlier note in this file said the game draws with the corpus linked; that was the frame loop running, not the drawing.
 
+### Windows ARM64 gameplay milestone (2026-11-06)
+
+A later Windows 11 ARM64 interpreter run **reached the title, navigated the
+menus, entered a battle and reached the defeat/results screen**. This was
+observed on real Qualcomm Adreno X1-45 hardware, with the separately owned
+European disc image and a private, fingerprint-verified six-key PGD file.
+The four sampled PGD ioctl requests all returned `0x00000000` instead of the
+earlier repeated `0x80010005`. The previous black-screen observation below is
+now a **resolved interpreter start-up blocker**, not the current limit.
+
+The sampled combat interval had 414 one-second performance records: **23.5
+host FPS on average**, 16.0 minimum, 31.3 maximum, and 70 records below
+20 FPS. Average guest execution took **34.3 ms**; Vulkan render took **3.0 ms**
+and measured GPU work **2.8 ms**. The game remains too slow in interpreter
+mode; CPU-side PSP interpretation is the dominant measured cost. This run had
+**no AOT corpus installed**, so it does not establish the speed or correctness
+of recompiled ARM64 code.
+
+Attack/effect audio was audible, but streamed music was not. The bootstrap
+was intentionally built with `PORTABLEKIT_FFMPEG=OFF`, and its stdout said
+`Audio: built without FFmpeg; streamed music is silent`. The game displayed
+English despite its multilingual disc: the profile had not specified a PSP
+system language. Graphics also show character trails and misaligned results
+text; neither is diagnosed from traces yet.
+
+**Next blockers:** build and compare the AOT corpus on ARM64 (the earlier
+macOS missing-display-list problem must be tested, not assumed fixed), enable
+native ARM64 FFmpeg to test low-level ATRAC music, then investigate the
+remaining graphics inaccuracies. No user game data or crypto keys are part
+of the repository or CI artifacts.
+
 ### Windows ARM64 interpreter observation (2026-11-05)
 
 The game-free Vulkan build from the Windows ARM64 development branch was used
@@ -31,12 +62,11 @@ samples, with no Vulkan error or process crash in the trace. This proves that
 the window was presenting frames; it does **not** prove that the scene logic
 was progressing or explain why no useful geometry was submitted.
 
-**Pending:** a bounded I/O trace spanning the transition to black, followed
-by a targeted GE list trace if necessary. Whether the game is waiting on an
-HLE response, loading data, or intentionally displaying blank frames is still
-unverified. There is no evidence yet that a driver workaround, an FPS change,
-or a key-file modification fixes the problem. Do not commit player disc data,
-generated code, captures, saves, or personally identifying paths.
+**Historical follow-up:** a bounded I/O trace found repeated PGD ioctl
+failures. Installing a private, verified key file for the later run resolved
+the repeated failures and the interpreter reached gameplay (see above).
+The separate AOT graphics issue is still open. Do not commit player disc
+data, generated code, captures, saves, keys or identifying paths.
 
 It was not stuck before; it was waiting, and three things were in the way. They are worth writing down in order, because the first one cost a day and was not a missing system call at all.
 
@@ -57,7 +87,10 @@ After two presses it reads the gzip stream at `sce_lbn0xec27` — the range the 
 
 Under the interpreter the white screen lasts about 1100 frames, because the load runs about twenty times slower than the game expects. The recompiled build, which would load it in seconds, draws nothing.
 
-**Not verified:** anything past the title screen; whether START is accepted; sound, which is silent because the low-level ATRAC decode is a stub; and the title screen on the recompiled build, for the reason above.
+**At the time of the original macOS test:** anything past the title screen,
+START input, sound or the recompiled title screen was unverified. The later
+Windows ARM64 interpreter gameplay milestone above supersedes the first two
+limitations, but not the audio or AOT questions.
 
 ## What the game asks of the GE
 
