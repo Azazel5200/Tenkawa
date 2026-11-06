@@ -57,8 +57,8 @@ jobs:
       - name: Compile game-free renderer and native recompiler tools
         run: cmake --build out-media --target TenkawaNative psp_recomp psp_analyze psprecomp_tests --config Release --parallel 2
 
-      - name: Run ARM64 recompiler semantic tests
-        run: ctest --test-dir out-media -C Release -R '^psprecomp_tests$' --output-on-failure
+      - name: Run ARM64 recompiler and GE diagnostic tests
+        run: ctest --test-dir out-media -C Release -R '^(psprecomp_tests|portablekit_ge_trace_compare_tests)$' --output-on-failure
 
       - name: Verify offline local AOT preparation script
         shell: pwsh
