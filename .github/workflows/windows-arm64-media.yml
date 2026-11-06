@@ -119,13 +119,22 @@ jobs:
             'FFmpeg libraries are dynamically linked; see licenses/.'
             'Neither music playback nor AOT gameplay is verified by CI.'
             'The existing graphics-only build remains the known-good baseline.'
-            'Generating your own AOT requires a checkout of the Tenkawa source'
-            'and a configured Windows ARM64 C++ build toolchain. The included'
-            'build_windows_arm64_aot.ps1 is maintained under scripts/ there.'
+            'To generate AOT source locally without Visual Studio or CMake:'
+            '    .\build_windows_arm64_aot.ps1 -GenerateOnly -EbootPath EBOOT.ELF'
+            'Use the prepared EBOOT.ELF from your separately owned game image.'
+            'The generated/ directory stays beside this script on your PC.'
+            'Compiling that C++ into a game requires a matching source checkout'
+            'and a configured Windows ARM64 C++ build toolchain.'
             ''
             'The port needs your separately owned European ULES-01456 disc.'
             'Keep that disc, saves, keys and generated C++ on your computer.'
           ) | Set-Content (Join-Path $stage 'README-EXPERIMENTAL.txt') -Encoding utf8
+
+      - name: Verify the standalone media toolkit can inspect native tools
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -File '.\out-media\bin\Release\build_windows_arm64_aot.ps1' -VerifyToolsOnly
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Smoke test native host and tool packages
         shell: pwsh
