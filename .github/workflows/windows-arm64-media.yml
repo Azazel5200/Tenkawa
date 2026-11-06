@@ -132,6 +132,10 @@ jobs:
         run: |
           & '.\out-media\bin\Release\TenkawaNative.exe' --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Proves the bundled ARM64 FFmpeg build exposes all three codecs.
+          # Does not load any private game files or claim music playback works.
+          & '.\out-media\bin\Release\TenkawaNative.exe' --check-media
+          if ($LASTEXITCODE -ne 0) { throw 'Required media decoders are missing' }
 
       - name: Upload game-free ARM64 media toolkit
         uses: actions/upload-artifact@v4

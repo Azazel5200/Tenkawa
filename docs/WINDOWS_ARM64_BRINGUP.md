@@ -95,6 +95,11 @@ workflow can validate compilation, architecture and `--help`, **not** music
 decoding or the correctness of generated game code without a private game
 image. Its artifact is an experiment until a real-machine test succeeds.
 
+The media workflow now runs `TenkawaNative.exe --check-media` after staging its
+native DLLs. This checks that the linked FFmpeg exposes ATRAC3, ATRAC3plus
+and H.264 decoders. It uses no game data; a successful result **does not**
+establish whether actual game music, loops or videos play correctly.
+
 **Language remains a separate hardware check.** The European disc supports
 multiple languages, but the first ARM64 gameplay test displayed English.
 PortableKit's development branch now supports a per-port PSP console language
