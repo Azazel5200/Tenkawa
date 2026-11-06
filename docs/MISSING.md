@@ -39,10 +39,17 @@ system language. Graphics also show character trails and misaligned results
 text; neither is diagnosed from traces yet.
 
 **Next blockers:** build and compare the AOT corpus on ARM64 (the earlier
-macOS missing-display-list problem must be tested, not assumed fixed), enable
-native ARM64 FFmpeg to test low-level ATRAC music, then investigate the
-remaining graphics inaccuracies. No user game data or crypto keys are part
-of the repository or CI artifacts.
+macOS missing-display-list problem must be tested, not assumed fixed), then
+investigate the remaining graphics inaccuracies and real gameplay performance.
+Audio checks are deferred while AOT correctness is unresolved. No user game
+data or crypto keys are part of the repository or CI artifacts.
+
+For the first ARM64 AOT comparison, PortableKit now has a bounded
+`TENKAWA_TRACE_GE_SUBMIT` trace that records GE queue calls, guest PC and
+return address. Compare AOT against the interpreter with
+`PSPRECOMP_HLE_HISTOGRAM=1`; if the AOT queue calls disappear, repeat AOT with
+`PSPRECOMP_NO_CHAIN=1` to isolate native call chaining. This diagnostic is
+prepared, not yet executed on the owner's ARM64 machine.
 
 ### Windows ARM64 interpreter observation (2026-11-05)
 

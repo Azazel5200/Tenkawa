@@ -129,6 +129,26 @@ corpus; this is a resource-intensive, potentially multi-hour step. It is
 **not** verified end-to-end yet: a successful compilation must still be
 followed by a real ARM64 gameplay and display-list comparison.
 
+### Comparing native AOT graphics to the interpreter
+
+The earlier AOT run on another platform advanced its frame loop but did not
+submit the expected GE display lists. The new PortableKit trace can locate
+the missing submission without dumping the game's assets. On the same scene,
+run each version with these settings (PowerShell):
+
+```powershell
+$env:TENKAWA_TRACE_GE_SUBMIT = '64'
+$env:TENKAWA_PERF = 'log'
+$env:PSPRECOMP_HLE_HISTOGRAM = '1'
+.\TenkawaNative.exe
+```
+
+Compare `[ge-submit]` entries and the HLE call histogram between the known-good
+interpreter build and the AOT build. If only AOT loses submissions, repeat the
+AOT run with `$env:PSPRECOMP_NO_CHAIN = '1'` to test whether cross-unit native
+call chaining affects the result; then remove that variable. Do not use the
+no-chain run for performance estimates. Neither outcome is known on ARM64 yet.
+
 ## 3. Original Windows ARM64 black-scene diagnosis (historical)
 
 The first real Windows ARM64 run used the **interpreter**, not the recompiled
